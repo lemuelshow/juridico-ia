@@ -1,0 +1,187 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  nome      String
+  senha     String
+  role      String   @default("admin")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClienteForm {
+  id           String      @id @default(cuid())
+  nome         String
+  cpf          String
+  email        String
+  telefone     String
+  tipoCaso     String
+  descricao    String      @db.Text
+  dadosExtra   String      @default("{}") @db.Text
+  status       String      @default("pendente")
+  escritorioId String?
+  escritorio   Escritorio? @relation(fields: [escritorioId], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  peticao      Peticao?
+}
+
+model Peticao {
+  id              String           @id @default(cuid())
+  conteudo        String           @db.Text
+  conteudoEditado String?          @db.Text
+  tokensUsados    Int              @default(0)
+  modeloUsado     String           @default("")
+  finalizada      Boolean          @default(false)
+  formulario      ClienteForm      @relation(fields: [formularioId], references: [id])
+  formularioId    String           @unique
+  documentos      DocumentoProva[]
+  createdAt       DateTime         @default(now())
+}
+
+model DocumentoProva {
+  id          String   @id @default(cuid())
+  peticaoId   String
+  peticao     Peticao  @relation(fields: [peticaoId], references: [id], onDelete: Cascade)
+  item        Int
+  nomeItem    String
+  nomeArquivo String
+  mimeType    String
+  tamanho     Int
+  dados       String   @db.Text
+  createdAt   DateTime @default(now())
+}
+
+model Escritorio {
+  id            String              @id @default(cuid())
+  nome          String
+  cnpj          String?
+  email         String              @unique
+  senha         String
+  plano         String              @default("basico")
+  ativo         Boolean             @default(true)
+  tokenLimit    Int                 @default(200000)
+  tokensUsados  Int                 @default(0)
+  papelTimbrado String?     @db.Text
+  logoBase64    String?     @db.Text
+  usuarios      UsuarioEscritorio[]
+  formularios   ClienteForm[]
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+}
+
+model UsuarioEscritorio {
+  id           String     @id @default(cuid())
+  escritorioId String
+  escritorio   Escritorio @relation(fields: [escritorioId], references: [id], onDelete: Cascade)
+  email        String     @unique
+  nome         String
+  senha        String
+  role         String     @default("advogado")
+  ativo        Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model ClaudeConfig {
+  id        String   @id @default(cuid())
+  nome      String
+  chaveApi  String
+  modelo    String   @default("claude-sonnet-4-6")
+  ativo     Boolean  @default(false)
+  maxTokens Int      @default(16000)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ContextoPeticao {
+  id            String   @id @default(cuid())
+  nome          String
+  tipoCaso      String   @unique
+  promptSistema String   @db.Text
+  ativo         Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model GatewayConfig {
+  id           String   @id @default(cuid())
+  nome         String
+  chavePublica String   @default("")
+  chavePrivada String   @default("")
+  ambiente     String   @default("sandbox")
+  ativo        Boolean  @default(false)
+  dadosExtra   String   @default("{}") @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Usuario {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  nome         String
+  senha        String
+  tokenLimit   Int      @default(10000)
+  tokensUsados Int      @default(0)
+  ativo        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model FormularioTemplate {
+  id        String               @id @default(cuid())
+  nome      String
+  tipoCaso  String               @unique
+  descricao String               @default("") @db.Text
+  ativo     Boolean              @default(true)
+  perguntas PerguntaFormulario[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
+
+model PerguntaFormulario {
+  id           String             @id @default(cuid())
+  templateId   String
+  template     FormularioTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  ordem        Int
+  texto        String
+  tipo         String
+  placeholder  String             @default("")
+  obrigatoria  Boolean            @default(true)
+  opcoes       String             @default("[]")
+  secao        String             @default("")
+  campoDetalhe Boolean            @default(false)
+  detalheLabel String             @default("")
+  createdAt    DateTime           @default(now())
+}
+
+model SmtpConfig {
+  id        String   @id @default(cuid())
+  host      String   @default("")
+  port      Int      @default(587)
+  user      String   @default("")
+  password  String   @default("")
+  fromName  String   @default("Peticionaaki")
+  fromEmail String   @default("")
+  secure    Boolean  @default(false)
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
