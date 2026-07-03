@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
           ...(typeof dadosExtra === 'object' ? dadosExtra : {}),
         }
 
-        const { conteudo, tokensUsados, modelo } = await gerarPeticao(tipoCaso, dadosCompletos)
+        const { conteudo, tokensUsados, modelo } = await gerarPeticao(tipoCaso, dadosCompletos, escritorioId)
 
         await prisma.peticao.create({
           data: {

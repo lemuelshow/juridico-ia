@@ -37,6 +37,14 @@ const navItems = [
       </svg>
     ),
   },
+  {
+    href: '/portal/machine-learning', label: 'Machine Learning',
+    icon: (active: boolean) => (
+      <svg className="w-5 h-5" fill={active ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={active ? 0 : 1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v2m6.364.636l-1.414 1.414M21 12h-2M5 12H3m3.05-5.95L4.636 4.636M8 21h8M9 17.5V16a4 4 0 10-2-7.465 5 5 0 019.9 0A4 4 0 0115 16v1.5a1.5 1.5 0 01-1.5 1.5h-3A1.5 1.5 0 019 17.5z" />
+      </svg>
+    ),
+  },
 ]
 
 function Sidebar() {

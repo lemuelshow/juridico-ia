@@ -61,21 +61,23 @@ model DocumentoProva {
 }
 
 model Escritorio {
-  id            String              @id @default(cuid())
-  nome          String
-  cnpj          String?
-  email         String              @unique
-  senha         String
-  plano         String              @default("basico")
-  ativo         Boolean             @default(true)
-  tokenLimit    Int                 @default(200000)
-  tokensUsados  Int                 @default(0)
-  papelTimbrado String?     @db.Text
-  logoBase64    String?     @db.Text
-  usuarios      UsuarioEscritorio[]
-  formularios   ClienteForm[]
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  id                    String                 @id @default(cuid())
+  nome                  String
+  cnpj                  String?
+  email                 String                 @unique
+  senha                 String
+  plano                 String                 @default("basico")
+  ativo                 Boolean                @default(true)
+  tokenLimit            Int                    @default(200000)
+  tokensUsados          Int                    @default(0)
+  papelTimbrado         String?                @db.Text
+  logoBase64            String?                @db.Text
+  usuarios              UsuarioEscritorio[]
+  formularios           ClienteForm[]
+  documentosTreinamento DocumentoTreinamento[]
+  padroesPeticao        PadraoPeticao[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 }
 
 model UsuarioEscritorio {
@@ -184,4 +186,29 @@ model PasswordResetToken {
   expiresAt DateTime
   used      Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model DocumentoTreinamento {
+  id           String     @id @default(cuid())
+  escritorioId String
+  escritorio   Escritorio @relation(fields: [escritorioId], references: [id], onDelete: Cascade)
+  tipoCaso     String
+  nomeArquivo  String
+  mimeType     String
+  tamanho      Int
+  dados        String     @db.Text
+  createdAt    DateTime   @default(now())
+}
+
+model PadraoPeticao {
+  id                      String     @id @default(cuid())
+  escritorioId            String
+  escritorio              Escritorio @relation(fields: [escritorioId], references: [id], onDelete: Cascade)
+  tipoCaso                String
+  padraoJson              String     @db.Text
+  qtdDocumentosAnalisados Int        @default(0)
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
+
+  @@unique([escritorioId, tipoCaso])
 }
