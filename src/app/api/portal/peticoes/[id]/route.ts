@@ -82,11 +82,19 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params
 
   const peticao = await getPeticaoAutorizada(id, escritorioId)
-  if (!peticao) return NextResponse.json({ error: 'Não encontrado ou acesso negado' }, { status: 404 })
+  if (peticao) {
+    // exclui petição e formulário em cascata
+    await prisma.peticao.delete({ where: { id } })
+    await prisma.clienteForm.delete({ where: { id: peticao.formularioId } })
+    return NextResponse.json({ ok: true })
+  }
 
-  // exclui petição e formulário em cascata
-  await prisma.peticao.delete({ where: { id } })
-  await prisma.clienteForm.delete({ where: { id: peticao.formularioId } })
+  // Ainda processando/com erro: nesse caso o id recebido é o do próprio ClienteForm
+  const formulario = await prisma.clienteForm.findUnique({ where: { id }, select: { id: true, escritorioId: true } })
+  if (!formulario || formulario.escritorioId !== escritorioId) {
+    return NextResponse.json({ error: 'Não encontrado ou acesso negado' }, { status: 404 })
+  }
+  await prisma.clienteForm.delete({ where: { id } })
 
   return NextResponse.json({ ok: true })
 }

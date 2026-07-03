@@ -9,25 +9,42 @@ export async function GET() {
 
   const escritorioId = (session.user as { escritorioId?: string }).escritorioId
 
-  try {
-    const peticoes = await prisma.peticao.findMany({
-      where: { formulario: { escritorioId } },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        formulario: { select: { nome: true, cpf: true, email: true, tipoCaso: true, status: true } },
-        _count: { select: { documentos: true } },
+  const formularios = await prisma.clienteForm.findMany({
+    where: { escritorioId },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      nome: true,
+      cpf: true,
+      email: true,
+      tipoCaso: true,
+      status: true,
+      createdAt: true,
+      peticao: {
+        select: {
+          id: true,
+          tokensUsados: true,
+          modeloUsado: true,
+          finalizada: true,
+          createdAt: true,
+          _count: { select: { documentos: true } },
+        },
       },
-    })
-    return NextResponse.json(peticoes)
-  } catch {
-    // fallback para quando o cliente Prisma ainda não tem documentos/finalizada (antes de restart)
-    const peticoes = await prisma.peticao.findMany({
-      where: { formulario: { escritorioId } },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        formulario: { select: { nome: true, cpf: true, email: true, tipoCaso: true, status: true } },
-      },
-    })
-    return NextResponse.json(peticoes.map(p => ({ ...p, finalizada: false, _count: { documentos: 0 } })))
-  }
+    },
+  })
+
+  const peticoes = formularios.map(f => ({
+    id: f.peticao?.id ?? f.id,
+    formularioId: f.id,
+    processando: !f.peticao && f.status !== 'erro',
+    erro: f.status === 'erro',
+    createdAt: f.peticao?.createdAt ?? f.createdAt,
+    tokensUsados: f.peticao?.tokensUsados ?? 0,
+    modeloUsado: f.peticao?.modeloUsado ?? '',
+    finalizada: f.peticao?.finalizada ?? false,
+    _count: f.peticao?._count ?? { documentos: 0 },
+    formulario: { nome: f.nome, cpf: f.cpf, email: f.email, tipoCaso: f.tipoCaso, status: f.status },
+  }))
+
+  return NextResponse.json(peticoes)
 }

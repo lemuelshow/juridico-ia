@@ -5,6 +5,8 @@ import Link from 'next/link'
 
 interface Peticao {
   id: string
+  processando: boolean
+  erro: boolean
   createdAt: string
   tokensUsados: number
   modeloUsado: string
@@ -21,9 +23,18 @@ export default function PeticoesPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  useEffect(() => {
+  function loadPeticoes() {
     fetch('/api/admin/peticoes').then((r) => r.json()).then((d) => { setPeticoes(d); setLoading(false) })
-  }, [])
+  }
+
+  useEffect(() => { loadPeticoes() }, [])
+
+  const temProcessando = peticoes.some((p) => p.processando)
+  useEffect(() => {
+    if (!temProcessando) return
+    const t = setInterval(loadPeticoes, 4000)
+    return () => clearInterval(t)
+  }, [temProcessando])
 
   const filtered = peticoes.filter(
     (p) =>
@@ -56,6 +67,7 @@ export default function PeticoesPage() {
                 <tr className="border-b border-gray-200 text-left">
                   <th className="py-3 pr-4 font-semibold text-gray-600">Cliente</th>
                   <th className="py-3 pr-4 font-semibold text-gray-600">Tipo</th>
+                  <th className="py-3 pr-4 font-semibold text-gray-600">Status</th>
                   <th className="py-3 pr-4 font-semibold text-gray-600">Tokens</th>
                   <th className="py-3 pr-4 font-semibold text-gray-600">Data</th>
                   <th className="py-3 font-semibold text-gray-600">Ações</th>
@@ -71,12 +83,31 @@ export default function PeticoesPage() {
                     <td className="py-3 pr-4">
                       <span className="badge bg-navy-100 text-navy-700">{tipoLabels[p.formulario.tipoCaso]}</span>
                     </td>
+                    <td className="py-3 pr-4">
+                      {p.processando ? (
+                        <div className="inline-flex flex-col gap-1.5 min-w-[110px]">
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                            Processando
+                          </span>
+                          <div className="h-1.5 w-24 bg-indigo-100 rounded-full overflow-hidden">
+                            <div className="h-full w-1/3 bg-indigo-500 rounded-full progress-indeterminate" />
+                          </div>
+                        </div>
+                      ) : p.erro ? (
+                        <span className="badge bg-red-100 text-red-700">Erro ao gerar</span>
+                      ) : (
+                        <span className="badge bg-emerald-100 text-emerald-700">Concluída</span>
+                      )}
+                    </td>
                     <td className="py-3 pr-4 text-gray-600">{p.tokensUsados.toLocaleString()}</td>
                     <td className="py-3 pr-4 text-gray-500">{new Date(p.createdAt).toLocaleDateString('pt-BR')}</td>
                     <td className="py-3">
-                      <Link href={`/peticao/${p.id}`} target="_blank" className="text-blue-600 hover:underline text-xs">
-                        Visualizar →
-                      </Link>
+                      {!p.processando && !p.erro && (
+                        <Link href={`/peticao/${p.id}`} target="_blank" className="text-blue-600 hover:underline text-xs">
+                          Visualizar →
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}

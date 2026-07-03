@@ -16,11 +16,11 @@ export default async function PortalDashboard() {
     prisma.peticao.count({ where: { formulario: { escritorioId } } }),
     prisma.peticao.count({ where: { formulario: { escritorioId }, createdAt: { gte: mesInicio } } }),
     prisma.escritorio.findUnique({ where: { id: escritorioId }, select: { nome: true, plano: true, tokensUsados: true, tokenLimit: true } }),
-    prisma.peticao.findMany({
-      where: { formulario: { escritorioId } },
+    prisma.clienteForm.findMany({
+      where: { escritorioId },
       orderBy: { createdAt: 'desc' },
       take: 8,
-      include: { formulario: true },
+      include: { peticao: { select: { id: true } } },
     }),
     prisma.formularioTemplate.findMany({ where: { ativo: true }, select: { tipoCaso: true, nome: true } }),
   ])
@@ -114,6 +114,7 @@ export default async function PortalDashboard() {
                 <tr className="border-b border-gray-50">
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Cliente</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Tipo</th>
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Status</th>
                   <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Data</th>
                   <th className="px-6 py-3"></th>
                 </tr>
@@ -122,17 +123,36 @@ export default async function PortalDashboard() {
                 {recentes.map(p => (
                   <tr key={p.id} className="hover:bg-slate-50/60 transition-colors group">
                     <td className="px-6 py-4">
-                      <p className="text-sm font-semibold text-gray-800">{p.formulario.nome}</p>
-                      <p className="text-xs text-gray-400">{p.formulario.cpf}</p>
+                      <p className="text-sm font-semibold text-gray-800">{p.nome}</p>
+                      <p className="text-xs text-gray-400">{p.cpf}</p>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${TIPO_COLORS[p.formulario.tipoCaso] || TIPO_COLORS.outros}`}>
-                        {tipoNome[p.formulario.tipoCaso] || p.formulario.tipoCaso}
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${TIPO_COLORS[p.tipoCaso] || TIPO_COLORS.outros}`}>
+                        {tipoNome[p.tipoCaso] || p.tipoCaso}
                       </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {p.peticao ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">Concluída</span>
+                      ) : p.status === 'erro' ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-700 ring-1 ring-red-200">Erro ao gerar</span>
+                      ) : (
+                        <div className="inline-flex flex-col gap-1.5 min-w-[110px]">
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                            Processando
+                          </span>
+                          <div className="h-1.5 w-24 bg-indigo-100 rounded-full overflow-hidden">
+                            <div className="h-full w-1/3 bg-indigo-500 rounded-full progress-indeterminate" />
+                          </div>
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">{new Date(p.createdAt).toLocaleDateString('pt-BR')}</td>
                     <td className="px-6 py-4 text-right">
-                      <Link href={`/portal/peticoes/${p.id}`} className="text-indigo-600 text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity">Abrir →</Link>
+                      {p.peticao && (
+                        <Link href={`/portal/peticoes/${p.peticao.id}`} className="text-indigo-600 text-sm font-semibold opacity-0 group-hover:opacity-100 transition-opacity">Abrir →</Link>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -141,27 +161,45 @@ export default async function PortalDashboard() {
 
             {/* Mobile cards */}
             <div className="md:hidden divide-y divide-gray-50">
-              {recentes.map(p => (
-                <Link key={p.id} href={`/portal/peticoes/${p.id}`} className="flex items-center gap-3 px-4 py-3.5 active:bg-gray-50">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                    <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{p.formulario.nome}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${TIPO_COLORS[p.formulario.tipoCaso] || TIPO_COLORS.outros}`}>
-                        {tipoNome[p.formulario.tipoCaso] || p.formulario.tipoCaso}
-                      </span>
-                      <span className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleDateString('pt-BR')}</span>
+              {recentes.map(p => {
+                const conteudo = (
+                  <>
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                      <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{p.nome}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${TIPO_COLORS[p.tipoCaso] || TIPO_COLORS.outros}`}>
+                          {tipoNome[p.tipoCaso] || p.tipoCaso}
+                        </span>
+                        {!p.peticao && (
+                          p.status === 'erro'
+                            ? <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-red-50 text-red-700">Erro</span>
+                            : <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600">Processando</span>
+                        )}
+                        <span className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleDateString('pt-BR')}</span>
+                      </div>
+                    </div>
+                    {p.peticao && (
+                      <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+                    )}
+                  </>
+                )
+                return p.peticao ? (
+                  <Link key={p.id} href={`/portal/peticoes/${p.peticao.id}`} className="flex items-center gap-3 px-4 py-3.5 active:bg-gray-50">
+                    {conteudo}
+                  </Link>
+                ) : (
+                  <div key={p.id} className="flex items-center gap-3 px-4 py-3.5">
+                    {conteudo}
                   </div>
-                  <svg className="w-4 h-4 text-gray-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-              ))}
+                )
+              })}
             </div>
           </>
         )}

@@ -6,6 +6,9 @@ import { TIPO_COLORS } from '@/lib/tipo-ui'
 
 interface Peticao {
   id: string
+  formularioId: string
+  processando: boolean
+  erro: boolean
   createdAt: string
   tokensUsados: number
   modeloUsado: string
@@ -18,6 +21,20 @@ interface Peticao {
     tipoCaso: string
     status: string
   }
+}
+
+function ProcessandoBadge() {
+  return (
+    <div className="inline-flex flex-col gap-1.5 min-w-[120px]">
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+        Processando
+      </span>
+      <div className="h-1.5 w-28 bg-indigo-100 rounded-full overflow-hidden">
+        <div className="h-full w-1/3 bg-indigo-500 rounded-full progress-indeterminate" />
+      </div>
+    </div>
+  )
 }
 
 interface Template { tipoCaso: string; nome: string }
@@ -47,6 +64,14 @@ export default function PortalPeticoesPage() {
     loadPeticoes()
     fetch('/api/formularios').then(r => r.json()).then(setTemplates)
   }, [])
+
+  // Enquanto houver petições em processamento, atualiza a lista periodicamente
+  const temProcessando = peticoes.some(p => p.processando)
+  useEffect(() => {
+    if (!temProcessando) return
+    const t = setInterval(loadPeticoes, 4000)
+    return () => clearInterval(t)
+  }, [temProcessando])
 
   async function toggleFinalizada(p: Peticao) {
     setAtualizando(p.id)
@@ -91,25 +116,29 @@ export default function PortalPeticoesPage() {
   function ActionButtons({ p }: { p: Peticao }) {
     return (
       <div className="flex items-center gap-1.5">
-        <Link href={`/portal/peticoes/${p.id}`} title="Abrir petição"
-          className="p-2 rounded-xl text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors active:scale-95">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-          </svg>
-        </Link>
-        <button onClick={() => copiarLinkProvas(p.id)} title="Copiar link de Provas"
-          className={`p-2 rounded-xl transition-colors active:scale-95 ${copiandoProvas === p.id ? 'text-emerald-600 bg-emerald-50' : 'text-gray-400 hover:text-violet-600 hover:bg-violet-50'}`}>
-          {copiandoProvas === p.id
-            ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-            : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>}
-        </button>
-        <button onClick={() => toggleFinalizada(p)} disabled={atualizando === p.id}
-          title={p.finalizada ? 'Reabrir' : 'Finalizar'}
-          className={`p-2 rounded-xl transition-colors active:scale-95 ${p.finalizada ? 'text-emerald-600 bg-emerald-50 hover:bg-red-50 hover:text-red-500' : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'}`}>
-          {atualizando === p.id
-            ? <div className="w-4 h-4 border border-current border-t-transparent rounded-full animate-spin" />
-            : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-        </button>
+        {!p.processando && !p.erro && (
+          <>
+            <Link href={`/portal/peticoes/${p.id}`} title="Abrir petição"
+              className="p-2 rounded-xl text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors active:scale-95">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </Link>
+            <button onClick={() => copiarLinkProvas(p.id)} title="Copiar link de Provas"
+              className={`p-2 rounded-xl transition-colors active:scale-95 ${copiandoProvas === p.id ? 'text-emerald-600 bg-emerald-50' : 'text-gray-400 hover:text-violet-600 hover:bg-violet-50'}`}>
+              {copiandoProvas === p.id
+                ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>}
+            </button>
+            <button onClick={() => toggleFinalizada(p)} disabled={atualizando === p.id}
+              title={p.finalizada ? 'Reabrir' : 'Finalizar'}
+              className={`p-2 rounded-xl transition-colors active:scale-95 ${p.finalizada ? 'text-emerald-600 bg-emerald-50 hover:bg-red-50 hover:text-red-500' : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'}`}>
+              {atualizando === p.id
+                ? <div className="w-4 h-4 border border-current border-t-transparent rounded-full animate-spin" />
+                : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+            </button>
+          </>
+        )}
         {confirmandoExcluir === p.id ? (
           <div className="flex items-center gap-1">
             <button onClick={() => excluir(p.id)} className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-red-500 text-white">Confirmar</button>
@@ -222,14 +251,22 @@ export default function PortalPeticoesPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                        {p.finalizada
-                          ? <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>Finalizada</span>
-                          : <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200">Em andamento</span>}
-                        {p._count.documentos > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-600">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                            {p._count.documentos}
-                          </span>
+                        {p.processando ? (
+                          <ProcessandoBadge />
+                        ) : p.erro ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-700 ring-1 ring-red-200">Erro ao gerar</span>
+                        ) : (
+                          <>
+                            {p.finalizada
+                              ? <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>Finalizada</span>
+                              : <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-50 text-amber-700 ring-1 ring-amber-200">Em andamento</span>}
+                            {p._count.documentos > 0 && (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-600">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                                {p._count.documentos}
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -258,11 +295,19 @@ export default function PortalPeticoesPage() {
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-lg ${TIPO_COLORS[p.formulario.tipoCaso] || TIPO_COLORS.outros}`}>
                       {tipoNome[p.formulario.tipoCaso] || p.formulario.tipoCaso}
                     </span>
-                    {p.finalizada
-                      ? <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>Finalizada</span>
-                      : <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700">Em andamento</span>}
-                    {p._count.documentos > 0 && (
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-600">{p._count.documentos} doc{p._count.documentos !== 1 ? 's' : ''}</span>
+                    {p.processando ? (
+                      <ProcessandoBadge />
+                    ) : p.erro ? (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-red-50 text-red-700">Erro ao gerar</span>
+                    ) : (
+                      <>
+                        {p.finalizada
+                          ? <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>Finalizada</span>
+                          : <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700">Em andamento</span>}
+                        {p._count.documentos > 0 && (
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-600">{p._count.documentos} doc{p._count.documentos !== 1 ? 's' : ''}</span>
+                        )}
+                      </>
                     )}
                     <span className="text-xs text-gray-400 ml-auto">{new Date(p.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</span>
                   </div>

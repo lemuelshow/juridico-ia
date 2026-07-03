@@ -70,25 +70,51 @@ export default function ProvasPage() {
 
   const docsPorItem = (item: number) => data?.documentos.filter(d => d.item === item) ?? []
 
+  const glassStyle = {
+    background: 'rgba(255,255,255,0.12)',
+    backdropFilter: 'blur(24px)',
+    WebkitBackdropFilter: 'blur(24px)',
+    border: '1px solid rgba(255,255,255,0.22)',
+  }
+
+  const VideoBg = () => (
+    <>
+      <video
+        autoPlay muted loop playsInline
+        className="fixed inset-0 w-full h-full object-cover"
+        style={{ opacity: 0.55 }}
+        src="/peticioneaki.mp4"
+      />
+      <div
+        className="fixed inset-0 pointer-events-none"
+        style={{ background: 'radial-gradient(circle at 50% 20%, rgba(15,23,42,0.45) 0%, rgba(15,23,42,0.82) 65%, #0f172a 100%)' }}
+      />
+    </>
+  )
+
   if (naoEncontrado) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="text-center">
-        <p className="text-gray-600 font-semibold">Link inválido ou expirado.</p>
-        <p className="text-gray-400 text-sm mt-1">Solicite um novo link ao seu advogado.</p>
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center" style={{ background: '#0f172a' }}>
+      <VideoBg />
+      <div className="text-center relative z-10 rounded-2xl px-8 py-7" style={glassStyle}>
+        <p className="text-white font-semibold">Link inválido ou expirado.</p>
+        <p className="text-white/60 text-sm mt-1">Solicite um novo link ao seu advogado.</p>
       </div>
     </div>
   )
 
   if (!data) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center" style={{ background: '#0f172a' }}>
+      <VideoBg />
+      <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin relative z-10" />
     </div>
   )
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen relative overflow-hidden" style={{ background: '#0f172a' }}>
+      <VideoBg />
+
       {/* Header */}
-      <div className="bg-white border-b border-gray-100 px-6 py-5">
+      <div className="relative z-10 px-6 py-5" style={{ ...glassStyle, borderRadius: 0, borderLeft: 'none', borderRight: 'none', borderTop: 'none' }}>
         <div className="max-w-2xl mx-auto flex items-center gap-4">
           {data.logoBase64 ? (
             <img src={data.logoBase64} alt="Logo" className="h-10 w-auto object-contain" />
@@ -100,20 +126,20 @@ export default function ProvasPage() {
             </div>
           )}
           <div>
-            <p className="text-xs text-gray-400">{data.escritorioNome}</p>
-            <p className="text-base font-bold text-gray-900">Formulário de Provas</p>
+            <p className="text-xs text-white/50">{data.escritorioNome}</p>
+            <p className="text-base font-bold text-white">Formulário de Provas</p>
           </div>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-6 py-8">
+      <div className="max-w-2xl mx-auto px-6 py-8 relative z-10">
         {/* Intro */}
-        <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5 mb-8">
-          <p className="text-indigo-900 font-semibold text-sm mb-1">Olá, {data.clienteNome.split(' ')[0]}!</p>
-          <p className="text-indigo-700 text-sm leading-relaxed">
+        <div className="rounded-2xl p-5 mb-8" style={glassStyle}>
+          <p className="text-white font-semibold text-sm mb-1">Olá, {data.clienteNome.split(' ')[0]}!</p>
+          <p className="text-white/75 text-sm leading-relaxed">
             Envie aqui os documentos do seu caso. Para cada item da lista, clique em <strong>Escolher arquivo</strong> e selecione o documento do seu dispositivo. Você pode enviar quantos arquivos quiser por item.
           </p>
-          <p className="text-indigo-500 text-xs mt-2">Limite: 15MB por arquivo. Para vídeos grandes, prefira o formato MP4 ou envie pelo WhatsApp do escritório.</p>
+          <p className="text-white/50 text-xs mt-2">Limite: 15MB por arquivo. Para vídeos grandes, prefira o formato MP4 ou envie pelo WhatsApp do escritório.</p>
         </div>
 
         {/* Itens */}
@@ -123,9 +149,9 @@ export default function ProvasPage() {
             const docs = docsPorItem(item)
             const enviando = uploading === item
             return (
-              <div key={item} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div key={item} className="rounded-2xl overflow-hidden shadow-lg" style={glassStyle}>
                 <div className="flex items-start gap-4 p-5">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold mt-0.5 ${docs.length > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold mt-0.5 ${docs.length > 0 ? 'bg-emerald-400/90 text-emerald-950' : 'bg-white text-slate-700'}`}>
                     {docs.length > 0 ? (
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
@@ -133,20 +159,20 @@ export default function ProvasPage() {
                     ) : String(item).padStart(2, '0')}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">{nomeItem}</p>
+                    <p className="text-sm font-semibold text-white">{nomeItem}</p>
                     {docs.length > 0 && (
                       <div className="mt-3 space-y-2">
                         {docs.map(doc => (
-                          <div key={doc.id} className="flex items-center gap-2 bg-emerald-50 rounded-xl px-3 py-2">
-                            <svg className="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <div key={doc.id} className="flex items-center gap-2 bg-emerald-950/40 border border-emerald-400/30 rounded-xl px-3 py-2">
+                            <svg className="w-4 h-4 text-emerald-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                             </svg>
-                            <span className="text-xs text-emerald-800 font-medium truncate flex-1">{doc.nomeArquivo}</span>
-                            <span className="text-xs text-emerald-500 shrink-0">{fmtSize(doc.tamanho)}</span>
+                            <span className="text-xs text-emerald-100 font-medium truncate flex-1">{doc.nomeArquivo}</span>
+                            <span className="text-xs text-emerald-300/70 shrink-0">{fmtSize(doc.tamanho)}</span>
                             <button
                               onClick={() => remover(doc.id)}
                               disabled={removendo === doc.id}
-                              className="text-emerald-400 hover:text-red-500 transition-colors shrink-0 ml-1"
+                              className="text-emerald-300/70 hover:text-red-400 transition-colors shrink-0 ml-1"
                             >
                               {removendo === doc.id ? (
                                 <div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />
@@ -160,9 +186,9 @@ export default function ProvasPage() {
                         ))}
                       </div>
                     )}
-                    {erro[item] && <p className="text-xs text-red-500 mt-1">{erro[item]}</p>}
+                    {erro[item] && <p className="text-xs text-red-300 mt-1">{erro[item]}</p>}
                   </div>
-                  <label className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${enviando ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}>
+                  <label className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition-all ${enviando ? 'bg-white/20 text-white/40 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
                     {enviando ? (
                       <><div className="w-3.5 h-3.5 border border-current border-t-transparent rounded-full animate-spin" />Enviando...</>
                     ) : (
@@ -183,11 +209,11 @@ export default function ProvasPage() {
         </div>
 
         {/* Resumo */}
-        <div className="mt-8 bg-gray-50 rounded-2xl p-5 text-center">
-          <p className="text-sm text-gray-600">
-            <span className="font-bold text-emerald-600">{data.documentos.length}</span> documento{data.documentos.length !== 1 ? 's' : ''} enviado{data.documentos.length !== 1 ? 's' : ''} de {data.itens.length} itens
+        <div className="mt-8 rounded-2xl p-5 text-center" style={glassStyle}>
+          <p className="text-sm text-white/80">
+            <span className="font-bold text-emerald-300">{data.documentos.length}</span> documento{data.documentos.length !== 1 ? 's' : ''} enviado{data.documentos.length !== 1 ? 's' : ''} de {data.itens.length} itens
           </p>
-          <p className="text-xs text-gray-400 mt-1">Os documentos são enviados automaticamente. Não é necessário salvar.</p>
+          <p className="text-xs text-white/40 mt-1">Os documentos são enviados automaticamente. Não é necessário salvar.</p>
         </div>
       </div>
     </div>

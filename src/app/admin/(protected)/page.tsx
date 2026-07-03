@@ -12,6 +12,8 @@ interface Stats {
 
 interface Peticao {
   id: string
+  processando: boolean
+  erro: boolean
   createdAt: string
   tokensUsados: number
   modeloUsado: string
@@ -78,9 +80,15 @@ export default function AdminDashboard() {
                   <p className="text-sm font-medium text-navy-800">{p.formulario.nome}</p>
                   <p className="text-xs text-gray-400">{tipoLabels[p.formulario.tipoCaso]} · {p.tokensUsados} tokens</p>
                 </div>
-                <Link href={`/peticao/${p.id}`} className="text-xs text-blue-600 hover:underline" target="_blank">
-                  Ver
-                </Link>
+                {p.processando ? (
+                  <span className="text-xs text-indigo-600 font-medium">Processando...</span>
+                ) : p.erro ? (
+                  <span className="text-xs text-red-600 font-medium">Erro</span>
+                ) : (
+                  <Link href={`/peticao/${p.id}`} className="text-xs text-blue-600 hover:underline" target="_blank">
+                    Ver
+                  </Link>
+                )}
               </div>
             ))}
           </div>
