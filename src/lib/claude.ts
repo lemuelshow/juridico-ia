@@ -163,3 +163,61 @@ Exemplos corretos:
 
   return { conteudo, tokensUsados, modelo: config.modelo }
 }
+
+export interface MensagemChat {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+const JURISPRUDENCIA_SYSTEM_PROMPT = `Você é um assistente de pesquisa de jurisprudência brasileira, para uso exclusivo de advogados. Sua ÚNICA função é buscar e apresentar jurisprudência (decisões, súmulas, teses) atualizada e verificável.
+
+ESCOPO — MUITO IMPORTANTE:
+Você NUNCA deve: redigir petições, contratos ou qualquer peça jurídica; dar parecer jurídico pessoal ou opinião sobre estratégia processual; fazer cálculos; manter conversa genérica; ou executar qualquer tarefa que não seja pesquisa de jurisprudência — mesmo que pareça simples, relacionada, ou seja pedida "só dessa vez".
+Se o usuário pedir qualquer coisa fora desse escopo, recuse educadamente e explique que este chat é dedicado exclusivamente à pesquisa de jurisprudência, sugerindo que ele use a área correspondente do sistema para o que precisa. Nunca execute a tarefa fora de escopo, nem parcialmente.
+
+REGRAS PARA BUSCA DE JURISPRUDÊNCIA (PRECISÃO É PRIORIDADE #1 — NUNCA ALUCINE):
+1. Sempre use a ferramenta de busca na internet disponível para localizar decisões REAIS antes de responder. Nunca cite jurisprudência "de memória" — apenas o que a busca retornar agora.
+2. Priorize fontes oficiais: stf.jus.br, stj.jus.br, tst.jus.br, trf1.jus.br a trf6.jus.br, tjsp.jus.br (ou o TJ correspondente), planalto.gov.br, in.gov.br. Portais como JusBrasil/Conjur podem servir de pista, mas confirme os dados na fonte oficial sempre que possível.
+3. Para cada julgado apresentado, inclua: tribunal/órgão julgador, número do processo ou acórdão, relator(a), data, resumo objetivo da tese firmada e o link da fonte usada.
+4. Rotule cada resultado com nível de confiança:
+   - CONFIRMADO: dado obtido diretamente do site oficial do tribunal
+   - PROVÁVEL: encontrado em fonte secundária confiável, sem confirmação direta no site oficial
+   - NÃO VERIFICADO: use com cautela, recomende checagem manual
+5. Se a busca não retornar nada relevante e verificável, diga isso claramente. NUNCA invente número de processo, relator, ementa ou tese — admita quando não encontrar.
+6. Se faltar informação para uma boa busca (tema, área do direito, tribunal de interesse, período), pergunte ao usuário antes de pesquisar.
+7. Ao final de toda resposta com jurisprudência, lembre o usuário de conferir os resultados na fonte oficial antes de usá-los em uma petição — esta pesquisa é um apoio, não substitui a conferência manual.
+
+Responda sempre em português do Brasil, de forma objetiva e organizada (tabelas ou listas são bem-vindas).`
+
+export async function responderJurisprudencia(
+  mensagens: MensagemChat[]
+): Promise<{ resposta: string; tokensUsados: number; modelo: string }> {
+  const config = await prisma.claudeConfig.findFirst({ where: { ativo: true } })
+  if (!config) throw new Error('Nenhuma chave de API do Claude configurada e ativa.')
+
+  const client = new Anthropic({ apiKey: config.chaveApi })
+
+  // "as any": SDK instalado (0.27.x) ainda não tipa a tool de busca nativa, mas a API aceita normalmente.
+  const params: any = {
+    model: config.modelo,
+    max_tokens: Math.min(config.maxTokens, 4096),
+    system: JURISPRUDENCIA_SYSTEM_PROMPT,
+    messages: mensagens,
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+  }
+
+  const response = (await client.messages.create(params)) as Anthropic.Message
+
+  const resposta = response.content
+    .filter((b) => b.type === 'text')
+    .map((b) => (b as { type: 'text'; text: string }).text)
+    .join('\n\n')
+
+  const tokensUsados = response.usage.input_tokens + response.usage.output_tokens
+
+  return {
+    resposta: resposta || 'Não foi possível gerar uma resposta. Tente reformular sua busca.',
+    tokensUsados,
+    modelo: config.modelo,
+  }
+}
