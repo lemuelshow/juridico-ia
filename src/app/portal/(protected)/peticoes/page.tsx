@@ -166,14 +166,14 @@ export default function PortalPeticoesPage() {
           <p className="text-gray-500 text-sm mt-1">{peticoes.length} documentos gerados no total</p>
         </div>
         <p className="text-gray-500 text-sm md:hidden">{peticoes.length} petições</p>
-        <button type="button" disabled title="Novas petições devem ser criadas pelo formulário do cliente por enquanto"
-          className="flex items-center gap-2 bg-gray-200 text-gray-500 font-semibold px-4 py-2.5 rounded-xl text-sm cursor-not-allowed">
+        <Link href="/portal/peticoes/nova"
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 10-8 0v2" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
           </svg>
           <span className="hidden sm:inline">Nova Petição</span>
           <span className="sm:hidden">Nova</span>
-        </button>
+        </Link>
       </div>
 
       {/* Filters */}

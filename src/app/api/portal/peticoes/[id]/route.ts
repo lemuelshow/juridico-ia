@@ -41,6 +41,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     tokensUsados: peticao.tokensUsados,
     modeloUsado: peticao.modeloUsado,
     finalizada: peticao.finalizada,
+    fonteFamilia: peticao.fonteFamilia,
+    fonteTamanho: peticao.fonteTamanho,
+    espacamentoLinha: peticao.espacamentoLinha,
+    alinhamentoTexto: peticao.alinhamentoTexto,
     createdAt: peticao.createdAt,
     formulario: {
       nome: peticao.formulario.nome,
@@ -69,6 +73,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const data: Record<string, unknown> = {}
   if (body.conteudoEditado !== undefined) data.conteudoEditado = body.conteudoEditado
   if (body.finalizada !== undefined) data.finalizada = body.finalizada
+  if (typeof body.fonteFamilia === 'string' && ['courier', 'arial', 'times', 'georgia'].includes(body.fonteFamilia)) {
+    data.fonteFamilia = body.fonteFamilia
+  }
+  if (typeof body.fonteTamanho === 'number' && body.fonteTamanho >= 10 && body.fonteTamanho <= 20) {
+    data.fonteTamanho = Math.round(body.fonteTamanho)
+  }
+  if (typeof body.espacamentoLinha === 'number' && body.espacamentoLinha >= 1 && body.espacamentoLinha <= 2.5) {
+    data.espacamentoLinha = body.espacamentoLinha
+  }
+  if (typeof body.alinhamentoTexto === 'string' && ['justify', 'left'].includes(body.alinhamentoTexto)) {
+    data.alinhamentoTexto = body.alinhamentoTexto
+  }
 
   const updated = await prisma.peticao.update({ where: { id }, data })
   return NextResponse.json(updated)

@@ -1,8 +1,22 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, type CSSProperties } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+
+const FONT_STACKS: Record<string, string> = {
+  courier: "'Courier New', Courier, monospace",
+  arial: 'Arial, Helvetica, sans-serif',
+  times: "'Times New Roman', Times, serif",
+  georgia: "Georgia, 'Times New Roman', serif",
+}
+
+const FONT_LABELS: Record<string, string> = {
+  courier: 'Courier New',
+  arial: 'Arial',
+  times: 'Times New Roman',
+  georgia: 'Georgia',
+}
 
 interface PeticaoDetail {
   id: string
@@ -10,6 +24,10 @@ interface PeticaoDetail {
   conteudoEditado: string | null
   tokensUsados: number
   modeloUsado: string
+  fonteFamilia: string
+  fonteTamanho: number
+  espacamentoLinha: number
+  alinhamentoTexto: string
   createdAt: string
   formulario: {
     nome: string
@@ -224,6 +242,11 @@ export default function PeticaoEditorPage() {
   const [itensProvas, setItensProvas] = useState<string[]>([])
   const [loadingProvas, setLoadingProvas] = useState(false)
   const [gerandoPdf, setGerandoPdf] = useState(false)
+  const [showFormatPanel, setShowFormatPanel] = useState(false)
+  const [fontFamily, setFontFamily] = useState('courier')
+  const [fontSize, setFontSize] = useState(13)
+  const [lineHeight, setLineHeight] = useState(1.6)
+  const [textAlign, setTextAlign] = useState<'justify' | 'left'>('justify')
   const editorRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -245,6 +268,10 @@ export default function PeticaoEditorPage() {
       editorRef.current.innerHTML = html
       setTotalMarks(tm)
       setCurrentMark(tm > 0 ? 1 : 0)
+      setFontFamily(data.fonteFamilia || 'courier')
+      setFontSize(data.fonteTamanho || 13)
+      setLineHeight(data.espacamentoLinha || 1.6)
+      setTextAlign(data.alinhamentoTexto === 'left' ? 'left' : 'justify')
     }
   }, [data])
 
@@ -277,7 +304,13 @@ export default function PeticaoEditorPage() {
     await fetch(`/api/portal/peticoes/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conteudoEditado: content }),
+      body: JSON.stringify({
+        conteudoEditado: content,
+        fonteFamilia: fontFamily,
+        fonteTamanho: fontSize,
+        espacamentoLinha: lineHeight,
+        alinhamentoTexto: textAlign,
+      }),
     })
     setSaving(false)
     setSaved(true)
@@ -610,6 +643,21 @@ export default function PeticaoEditorPage() {
             )}
           </button>
 
+          {/* Formatação */}
+          <button onClick={() => setShowFormatPanel(true)}
+            className="p-2 md:px-3 md:py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-500 hover:bg-gray-50 transition-all"
+            title="Formatação">
+            <svg className="w-4 h-4 md:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+            </svg>
+            <span className="hidden md:flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
+              </svg>
+              Formatação
+            </span>
+          </button>
+
           {/* Dados toggle */}
           <button onClick={() => setShowSidebar(s => !s)}
             className={`p-2 md:px-3 md:py-2 rounded-lg text-xs font-semibold border transition-all ${showSidebar ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
@@ -683,18 +731,21 @@ export default function PeticaoEditorPage() {
             contentEditable
             suppressContentEditableWarning
             ref={editorRef}
-            style={{ wordBreak: 'break-word' }}
+            style={{
+              wordBreak: 'break-word',
+              ['--ed-font-family' as string]: FONT_STACKS[fontFamily] ?? FONT_STACKS.courier,
+              ['--ed-font-size' as string]: `${fontSize}px`,
+              ['--ed-line-height' as string]: String(lineHeight),
+              ['--ed-align' as string]: textAlign,
+            } as CSSProperties}
           />
 
           <style>{`
             [contenteditable] {
-              font-family: 'Courier New', Courier, monospace;
-              font-size: 13px;
-              line-height: 1.6;
+              font-family: var(--ed-font-family);
+              font-size: var(--ed-font-size);
+              line-height: var(--ed-line-height);
               color: #000;
-            }
-            @media (min-width: 768px) {
-              [contenteditable] { font-size: 14.67px; line-height: 1.5; }
             }
             [contenteditable] .ed-title {
               font-weight: bold; text-align: center; text-transform: uppercase;
@@ -713,14 +764,14 @@ export default function PeticaoEditorPage() {
             [contenteditable] .toc-dots { color: #555; white-space: pre; padding: 0 2px; }
             [contenteditable] .toc-page { min-width: 2em; text-align: right; flex-shrink: 0; }
             [contenteditable] .ed-para {
-              text-align: justify; text-indent: 1.25cm; margin-bottom: 0.4rem;
+              text-align: var(--ed-align); text-indent: 1.25cm; margin-bottom: 0.4rem;
             }
             [contenteditable] .ed-quoted {
               margin-left: 1cm; margin-right: 0.5cm;
-              margin-bottom: 0.3rem; font-size: 12px; text-align: justify;
+              margin-bottom: 0.3rem; font-size: calc(var(--ed-font-size) * 0.92); text-align: justify;
             }
             @media (min-width: 768px) {
-              [contenteditable] .ed-quoted { margin-left: 2.5cm; margin-right: 1cm; font-size: 13.33px; }
+              [contenteditable] .ed-quoted { margin-left: 2.5cm; margin-right: 1cm; }
             }
             [contenteditable] .ed-spacer { height: 0.5rem; display: block; }
             [contenteditable]:focus { outline: none; }
@@ -919,6 +970,85 @@ export default function PeticaoEditorPage() {
               </span>
             </div>
           )}
+        </div>
+      </div>
+    )}
+
+    {/* ── Painel de Formatação ── */}
+    {showFormatPanel && (
+      <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center">
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowFormatPanel(false)} />
+
+        <div className="relative bg-white w-full md:max-w-sm md:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh]">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+            <p className="text-sm font-bold text-gray-900">Formatação do documento</p>
+            <button onClick={() => setShowFormatPanel(false)}
+              className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="p-5 space-y-5 overflow-y-auto">
+            {/* Fonte */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Fonte</p>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(FONT_LABELS).map(([key, label]) => (
+                  <button key={key} onClick={() => setFontFamily(key)}
+                    className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${fontFamily === key ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                    style={{ fontFamily: FONT_STACKS[key] }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tamanho */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Tamanho da fonte</p>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setFontSize(s => Math.max(10, s - 1))}
+                  className="w-9 h-9 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-bold text-base leading-none">−</button>
+                <span className="flex-1 text-center text-sm font-semibold text-gray-800 tabular-nums">{fontSize}px</span>
+                <button onClick={() => setFontSize(s => Math.min(20, s + 1))}
+                  className="w-9 h-9 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 font-bold text-base leading-none">+</button>
+              </div>
+            </div>
+
+            {/* Espaçamento entre linhas */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Espaçamento entre linhas</p>
+              <div className="grid grid-cols-4 gap-2">
+                {[1, 1.15, 1.5, 2].map(v => (
+                  <button key={v} onClick={() => setLineHeight(v)}
+                    className={`px-2 py-2 rounded-lg text-xs font-semibold border transition-all ${lineHeight === v ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Alinhamento */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Alinhamento do texto</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setTextAlign('justify')}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${textAlign === 'justify' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  Justificado
+                </button>
+                <button onClick={() => setTextAlign('left')}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${textAlign === 'left' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  Esquerda
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-4 border-t border-gray-100 shrink-0">
+            <p className="text-[11px] text-gray-400">A pré-visualização é aplicada na hora. Clique em &quot;Salvar&quot; para manter essas preferências na petição.</p>
+          </div>
         </div>
       </div>
     )}
