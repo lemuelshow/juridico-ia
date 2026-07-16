@@ -36,8 +36,9 @@ export async function GET() {
   const peticoes = formularios.map(f => ({
     id: f.peticao?.id ?? f.id,
     formularioId: f.id,
-    processando: !f.peticao && f.status !== 'erro',
+    processando: !f.peticao && f.status === 'processando',
     erro: f.status === 'erro',
+    cancelado: f.status === 'cancelado',
     createdAt: f.peticao?.createdAt ?? f.createdAt,
     tokensUsados: f.peticao?.tokensUsados ?? 0,
     modeloUsado: f.peticao?.modeloUsado ?? '',

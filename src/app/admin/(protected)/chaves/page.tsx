@@ -23,6 +23,8 @@ export default function ChavesPage() {
   const [form, setForm] = useState({ nome: '', chaveApi: '', modelo: 'claude-sonnet-4-6', maxTokens: 4000 })
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState('')
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editMaxTokens, setEditMaxTokens] = useState(0)
 
   const load = () => fetch('/api/admin/chaves').then((r) => r.json()).then(setChaves)
   useEffect(() => { load() }, [])
@@ -45,6 +47,16 @@ export default function ChavesPage() {
       setMsg(d.error || 'Erro ao salvar')
     }
     setLoading(false)
+  }
+
+  async function handleUpdateMaxTokens(id: string) {
+    await fetch(`/api/admin/chaves/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ maxTokens: editMaxTokens }),
+    })
+    setEditId(null)
+    load()
   }
 
   async function toggleAtivo(chave: Chave) {
@@ -89,8 +101,9 @@ export default function ChavesPage() {
             </div>
             <div>
               <label className="label">Máximo de Tokens por Resposta</label>
-              <input className="input" type="number" min={100} max={16000} value={form.maxTokens}
+              <input className="input" type="number" min={100} value={form.maxTokens}
                 onChange={(e) => setForm({ ...form, maxTokens: Number(e.target.value) })} />
+              <p className="text-xs text-gray-400 mt-1">Defina o valor que achar necessário, sem teto fixo.</p>
             </div>
             {msg && <p className={`text-sm ${msg.includes('sucesso') ? 'text-green-600' : 'text-red-600'}`}>{msg}</p>}
             <button type="submit" className="btn-primary w-full" disabled={loading}>
@@ -117,7 +130,27 @@ export default function ChavesPage() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mb-3">{c.modelo} · {c.maxTokens.toLocaleString()} tokens</p>
-                  <div className="flex gap-2">
+
+                  {editId === c.id && (
+                    <div className="flex gap-2 items-center mb-3">
+                      <input type="number" min={100} className="input text-sm py-1" value={editMaxTokens}
+                        onChange={(e) => setEditMaxTokens(Number(e.target.value))} />
+                      <button onClick={() => handleUpdateMaxTokens(c.id)}
+                        className="text-xs px-3 py-1.5 bg-navy-700 text-white rounded-lg hover:bg-navy-800">
+                        Salvar
+                      </button>
+                      <button onClick={() => setEditId(null)}
+                        className="text-xs px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg">
+                        Cancelar
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 flex-wrap">
+                    <button onClick={() => { setEditId(c.id); setEditMaxTokens(c.maxTokens) }}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 font-medium transition-colors">
+                      Alterar Limite
+                    </button>
                     <button onClick={() => toggleAtivo(c)}
                       className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
                         c.ativo ? 'bg-gray-200 text-gray-700 hover:bg-gray-300' : 'bg-green-600 text-white hover:bg-green-700'

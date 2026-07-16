@@ -7,6 +7,7 @@ interface Peticao {
   id: string
   processando: boolean
   erro: boolean
+  cancelado: boolean
   createdAt: string
   tokensUsados: number
   modeloUsado: string
@@ -22,9 +23,26 @@ export default function PeticoesPage() {
   const [peticoes, setPeticoes] = useState<Peticao[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [acaoEmAndamento, setAcaoEmAndamento] = useState<string | null>(null)
 
   function loadPeticoes() {
     fetch('/api/admin/peticoes').then((r) => r.json()).then((d) => { setPeticoes(d); setLoading(false) })
+  }
+
+  async function cancelar(id: string) {
+    if (!confirm('Cancelar este processamento?')) return
+    setAcaoEmAndamento(id)
+    await fetch(`/api/admin/peticoes/${id}/cancelar`, { method: 'POST' })
+    await loadPeticoes()
+    setAcaoEmAndamento(null)
+  }
+
+  async function reprocessar(id: string) {
+    if (!confirm('Reprocessar esta petição?')) return
+    setAcaoEmAndamento(id)
+    await fetch(`/api/admin/peticoes/${id}/reprocessar`, { method: 'POST' })
+    await loadPeticoes()
+    setAcaoEmAndamento(null)
   }
 
   useEffect(() => { loadPeticoes() }, [])
@@ -96,6 +114,8 @@ export default function PeticoesPage() {
                         </div>
                       ) : p.erro ? (
                         <span className="badge bg-red-100 text-red-700">Erro ao gerar</span>
+                      ) : p.cancelado ? (
+                        <span className="badge bg-gray-200 text-gray-600">Cancelada</span>
                       ) : (
                         <span className="badge bg-emerald-100 text-emerald-700">Concluída</span>
                       )}
@@ -103,7 +123,19 @@ export default function PeticoesPage() {
                     <td className="py-3 pr-4 text-gray-600">{p.tokensUsados.toLocaleString()}</td>
                     <td className="py-3 pr-4 text-gray-500">{new Date(p.createdAt).toLocaleDateString('pt-BR')}</td>
                     <td className="py-3">
-                      {!p.processando && !p.erro && (
+                      {p.processando && (
+                        <button onClick={() => cancelar(p.id)} disabled={acaoEmAndamento === p.id}
+                          className="text-red-600 hover:underline text-xs disabled:opacity-50">
+                          {acaoEmAndamento === p.id ? 'Cancelando...' : 'Cancelar'}
+                        </button>
+                      )}
+                      {(p.erro || p.cancelado) && (
+                        <button onClick={() => reprocessar(p.id)} disabled={acaoEmAndamento === p.id}
+                          className="text-indigo-600 hover:underline text-xs disabled:opacity-50">
+                          {acaoEmAndamento === p.id ? 'Reprocessando...' : 'Reprocessar'}
+                        </button>
+                      )}
+                      {!p.processando && !p.erro && !p.cancelado && (
                         <Link href={`/peticao/${p.id}`} target="_blank" className="text-blue-600 hover:underline text-xs">
                           Visualizar →
                         </Link>

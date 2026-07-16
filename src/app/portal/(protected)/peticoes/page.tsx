@@ -9,6 +9,7 @@ interface Peticao {
   formularioId: string
   processando: boolean
   erro: boolean
+  cancelado: boolean
   createdAt: string
   tokensUsados: number
   modeloUsado: string
@@ -116,7 +117,7 @@ export default function PortalPeticoesPage() {
   function ActionButtons({ p }: { p: Peticao }) {
     return (
       <div className="flex items-center gap-1.5">
-        {!p.processando && !p.erro && (
+        {!p.processando && !p.erro && !p.cancelado && (
           <>
             <Link href={`/portal/peticoes/${p.id}`} title="Abrir petição"
               className="p-2 rounded-xl text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors active:scale-95">
@@ -165,13 +166,14 @@ export default function PortalPeticoesPage() {
           <p className="text-gray-500 text-sm mt-1">{peticoes.length} documentos gerados no total</p>
         </div>
         <p className="text-gray-500 text-sm md:hidden">{peticoes.length} petições</p>
-        <Link href="/" className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl text-sm transition-colors shadow-sm shadow-indigo-600/30">
+        <button type="button" disabled title="Novas petições devem ser criadas pelo formulário do cliente por enquanto"
+          className="flex items-center gap-2 bg-gray-200 text-gray-500 font-semibold px-4 py-2.5 rounded-xl text-sm cursor-not-allowed">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 10-8 0v2" />
           </svg>
           <span className="hidden sm:inline">Nova Petição</span>
           <span className="sm:hidden">Nova</span>
-        </Link>
+        </button>
       </div>
 
       {/* Filters */}
@@ -255,6 +257,8 @@ export default function PortalPeticoesPage() {
                           <ProcessandoBadge />
                         ) : p.erro ? (
                           <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-700 ring-1 ring-red-200">Erro ao gerar</span>
+                        ) : p.cancelado ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 ring-1 ring-gray-200">Cancelada</span>
                         ) : (
                           <>
                             {p.finalizada
@@ -299,6 +303,8 @@ export default function PortalPeticoesPage() {
                       <ProcessandoBadge />
                     ) : p.erro ? (
                       <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-red-50 text-red-700">Erro ao gerar</span>
+                    ) : p.cancelado ? (
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-gray-100 text-gray-600">Cancelada</span>
                     ) : (
                       <>
                         {p.finalizada

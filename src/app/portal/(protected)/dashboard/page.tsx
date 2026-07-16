@@ -136,6 +136,8 @@ export default async function PortalDashboard() {
                         <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">Concluída</span>
                       ) : p.status === 'erro' ? (
                         <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-700 ring-1 ring-red-200">Erro ao gerar</span>
+                      ) : p.status === 'cancelado' ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-600 ring-1 ring-gray-200">Cancelada</span>
                       ) : (
                         <div className="inline-flex flex-col gap-1.5 min-w-[110px]">
                           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
@@ -178,7 +180,9 @@ export default async function PortalDashboard() {
                         {!p.peticao && (
                           p.status === 'erro'
                             ? <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-red-50 text-red-700">Erro</span>
-                            : <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600">Processando</span>
+                            : p.status === 'cancelado'
+                              ? <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-600">Cancelada</span>
+                              : <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600">Processando</span>
                         )}
                         <span className="text-xs text-gray-400">{new Date(p.createdAt).toLocaleDateString('pt-BR')}</span>
                       </div>
