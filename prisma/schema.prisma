@@ -38,6 +38,7 @@ model Peticao {
   id               String           @id @default(cuid())
   conteudo         String           @db.Text
   conteudoEditado  String?          @db.Text
+  conteudoHtml     String?          @db.Text
   tokensUsados     Int              @default(0)
   modeloUsado      String           @default("")
   finalizada       Boolean          @default(false)

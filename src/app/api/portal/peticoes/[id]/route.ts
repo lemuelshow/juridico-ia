@@ -38,6 +38,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     id: peticao.id,
     conteudo: peticao.conteudo,
     conteudoEditado: peticao.conteudoEditado,
+    conteudoHtml: peticao.conteudoHtml,
     tokensUsados: peticao.tokensUsados,
     modeloUsado: peticao.modeloUsado,
     finalizada: peticao.finalizada,
@@ -72,6 +73,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const data: Record<string, unknown> = {}
   if (body.conteudoEditado !== undefined) data.conteudoEditado = body.conteudoEditado
+  if (typeof body.conteudoHtml === 'string') data.conteudoHtml = body.conteudoHtml
   if (body.finalizada !== undefined) data.finalizada = body.finalizada
   if (typeof body.fonteFamilia === 'string' && ['courier', 'arial', 'times', 'georgia'].includes(body.fonteFamilia)) {
     data.fonteFamilia = body.fonteFamilia

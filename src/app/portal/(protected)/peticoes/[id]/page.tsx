@@ -18,10 +18,14 @@ const FONT_LABELS: Record<string, string> = {
   georgia: 'Georgia',
 }
 
+const CM_PX = 96 / 2.54
+const RULER_TICKS = 15
+
 interface PeticaoDetail {
   id: string
   conteudo: string
   conteudoEditado: string | null
+  conteudoHtml: string | null
   tokensUsados: number
   modeloUsado: string
   fonteFamilia: string
@@ -201,28 +205,245 @@ function buildEditorHTML(content: string): { html: string; totalMarks: number } 
 function serializeEditor(el: HTMLElement): string {
   const lines: string[] = []
 
-  function walkParagraph(p: HTMLElement): string {
-    let text = ''
-    for (const child of p.childNodes) {
-      if (child instanceof HTMLElement && child.dataset.mark !== undefined) {
-        text += `§§${child.textContent || ''}§§`
-      } else if (child instanceof HTMLElement) {
-        text += child.textContent || ''
-      } else {
-        text += child.textContent || ''
-      }
+  function walkNode(node: Node): string {
+    if (node instanceof HTMLElement && node.dataset.mark !== undefined) {
+      return `§§${node.textContent || ''}§§`
     }
-    return text
+    if (node instanceof HTMLElement) {
+      let text = ''
+      for (const child of node.childNodes) text += walkNode(child)
+      return text
+    }
+    return node.textContent || ''
   }
 
   for (const child of el.childNodes) {
     if (child instanceof HTMLElement && child.tagName === 'P') {
-      const text = walkParagraph(child)
-      lines.push(text === ' ' || text === ' ' ? '' : text)
+      const text = walkNode(child)
+      lines.push(text === ' ' || text === ' ' ? '' : text)
     }
   }
 
   return lines.join('\n')
+}
+
+// ── Sanitização do HTML persistido (defesa contra colagem de markup arbitrário) ──
+const ALLOWED_TAGS = new Set(['P', 'SPAN', 'MARK', 'BR'])
+const ALLOWED_STYLE_PROPS = new Set(['font-family', 'font-size', 'line-height', 'text-align', 'margin-left', 'text-indent'])
+
+function cleanNode(node: HTMLElement) {
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const child of Array.from(node.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) continue
+      if (!(child instanceof HTMLElement)) { node.removeChild(child); changed = true; continue }
+      if (child.tagName === 'SCRIPT' || child.tagName === 'STYLE') { node.removeChild(child); changed = true; continue }
+      if (!ALLOWED_TAGS.has(child.tagName)) {
+        while (child.firstChild) node.insertBefore(child.firstChild, child)
+        node.removeChild(child)
+        changed = true
+      }
+    }
+  }
+  for (const child of Array.from(node.childNodes)) {
+    if (!(child instanceof HTMLElement)) continue
+    for (const attr of Array.from(child.attributes)) {
+      if (attr.name !== 'class' && attr.name !== 'style' && attr.name !== 'data-mark') child.removeAttribute(attr.name)
+    }
+    if (child.hasAttribute('style')) {
+      const kept: string[] = []
+      for (const prop of Array.from(child.style)) {
+        if (ALLOWED_STYLE_PROPS.has(prop)) kept.push(`${prop}: ${child.style.getPropertyValue(prop)}`)
+      }
+      if (kept.length > 0) child.setAttribute('style', kept.join('; '))
+      else child.removeAttribute('style')
+    }
+    cleanNode(child)
+  }
+}
+
+function sanitizeEditorHtml(html: string): string {
+  const parsed = new DOMParser().parseFromString(html, 'text/html')
+  cleanNode(parsed.body)
+  return parsed.body.innerHTML
+}
+
+// ── Resolução de formatação por parágrafo (usada pela mini-toolbar, régua, PDF e DOCX) ──
+function getParaAlign(p: HTMLElement, docDefault: 'justify' | 'left'): 'justify' | 'left' {
+  const inline = p.style.textAlign
+  if (inline === 'left' || inline === 'justify') return inline
+  if (p.classList.contains('ed-para')) return docDefault
+  if (p.classList.contains('ed-quoted')) return 'justify'
+  return 'left'
+}
+function getParaLineHeight(p: HTMLElement, def: number): number {
+  const v = parseFloat(p.style.lineHeight)
+  return Number.isFinite(v) && v > 0 ? v : def
+}
+function getParaMarginCm(p: HTMLElement): number {
+  const v = parseFloat(p.style.marginLeft)
+  if (Number.isFinite(v)) return v
+  return p.classList.contains('ed-quoted') ? 2.5 : 0
+}
+function getParaIndentCm(p: HTMLElement): number {
+  const v = parseFloat(p.style.textIndent)
+  if (Number.isFinite(v)) return v
+  return p.classList.contains('ed-para') ? 1.25 : 0
+}
+
+interface FlatRun { text: string; family: string; sizePx: number }
+
+function flattenRuns(node: Node, family: string, sizePx: number): FlatRun[] {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const t = node.textContent || ''
+    return t ? [{ text: t, family, sizePx }] : []
+  }
+  if (node instanceof HTMLElement) {
+    let f = family, s = sizePx
+    if (node.style.fontFamily) f = node.style.fontFamily
+    const fs = parseFloat(node.style.fontSize)
+    if (Number.isFinite(fs)) s = fs
+    const runs: FlatRun[] = []
+    for (const child of Array.from(node.childNodes)) runs.push(...flattenRuns(child, f, s))
+    return runs
+  }
+  return []
+}
+
+function stackToJsPdfFont(stack: string): 'courier' | 'helvetica' | 'times' {
+  const s = stack.toLowerCase()
+  if (s.includes('courier')) return 'courier'
+  if (s.includes('times') || s.includes('georgia')) return 'times'
+  return 'helvetica'
+}
+
+function stackToDocxFont(stack: string): string {
+  const s = stack.toLowerCase()
+  if (s.includes('courier')) return 'Courier New'
+  if (s.includes('georgia')) return 'Georgia'
+  if (s.includes('times')) return 'Times New Roman'
+  if (s.includes('arial')) return 'Arial'
+  return 'Times New Roman'
+}
+
+// ── Seleção / parágrafos ativos no editor ──
+function closestParagraph(editor: HTMLElement, node: Node): HTMLElement | null {
+  let cur: Node | null = node
+  while (cur && cur !== editor) {
+    if (cur instanceof HTMLElement && cur.tagName === 'P') return cur
+    cur = cur.parentNode
+  }
+  return null
+}
+
+function getEditorParagraphs(editor: HTMLElement, range: Range): HTMLElement[] {
+  const all = Array.from(editor.children).filter((c): c is HTMLElement => c instanceof HTMLElement && c.tagName === 'P')
+  const startP = closestParagraph(editor, range.startContainer)
+  const endP = closestParagraph(editor, range.endContainer)
+  if (!startP || !endP) return startP ? [startP] : []
+  const startIdx = all.indexOf(startP)
+  const endIdx = all.indexOf(endP)
+  if (startIdx === -1 || endIdx === -1) return []
+  const [lo, hi] = startIdx <= endIdx ? [startIdx, endIdx] : [endIdx, startIdx]
+  return all.slice(lo, hi + 1)
+}
+
+// ── Régua de recuo (estilo Word) ──
+function Ruler({ marginCm, indentCm, disabled, onChange }: {
+  marginCm: number; indentCm: number; disabled: boolean; onChange: (marginCm: number, indentCm: number) => void
+}) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const dragType = useRef<'margin' | 'indent' | null>(null)
+  const stateRef = useRef({ marginCm, indentCm, onChange })
+  useEffect(() => { stateRef.current = { marginCm, indentCm, onChange } })
+
+  const onDrag = useCallback((e: MouseEvent) => {
+    const track = trackRef.current
+    if (!track || !dragType.current) return
+    const rect = track.getBoundingClientRect()
+    const px = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
+    const cm = Math.round((px / CM_PX) * 4) / 4
+    const { marginCm: m, indentCm: i, onChange: cb } = stateRef.current
+    if (dragType.current === 'margin') cb(Math.max(0, cm), i)
+    else cb(m, cm - m)
+  }, [])
+
+  const onDragEnd = useCallback(() => {
+    dragType.current = null
+    window.removeEventListener('mousemove', onDrag)
+    window.removeEventListener('mouseup', onDragEnd)
+  }, [onDrag])
+
+  function startDrag(type: 'margin' | 'indent') {
+    return (e: React.MouseEvent) => {
+      if (disabled) return
+      e.preventDefault()
+      dragType.current = type
+      window.addEventListener('mousemove', onDrag)
+      window.addEventListener('mouseup', onDragEnd)
+    }
+  }
+
+  const trackWidth = RULER_TICKS * CM_PX
+
+  return (
+    <div className={`hidden md:block max-w-[794px] mx-auto ${disabled ? 'opacity-40' : ''}`}>
+      <div className="bg-white border border-b-0 border-gray-200 rounded-t-sm shadow-sm px-[105px] pt-3 pb-1.5">
+        <div ref={trackRef} className="relative h-4" style={{ width: trackWidth }}>
+          <div className="absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 bg-gray-50 border border-gray-200 rounded-sm" />
+          {Array.from({ length: RULER_TICKS + 1 }, (_, cm) => (
+            <div key={cm} className="absolute top-1/2 -translate-y-1/2 w-px h-2.5 bg-gray-300" style={{ left: cm * CM_PX }}>
+              {cm > 0 && <span className="absolute -top-3.5 -translate-x-1/2 text-[8px] text-gray-400 select-none">{cm}</span>}
+            </div>
+          ))}
+          <div
+            className={`absolute top-0 w-0 h-0 -translate-x-1/2 ${disabled ? '' : 'cursor-ew-resize'}`}
+            style={{ left: (marginCm + indentCm) * CM_PX, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '6px solid #4f46e5' }}
+            onMouseDown={startDrag('indent')}
+            title="Recuo da primeira linha"
+          />
+          <div
+            className={`absolute bottom-0 w-0 h-0 -translate-x-1/2 ${disabled ? '' : 'cursor-ew-resize'}`}
+            style={{ left: marginCm * CM_PX, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '6px solid #4f46e5' }}
+            onMouseDown={startDrag('margin')}
+            title="Recuo esquerdo"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── PDF: quebra de linha manuscrita respeitando trechos com fontes/tamanhos diferentes ──
+interface PdfRun { text: string; family: 'courier' | 'helvetica' | 'times'; sizePt: number; bold?: boolean }
+interface PdfWord extends PdfRun { widthMm: number }
+
+function wrapPdfRuns(doc: { setFont: (f: string, s: string) => void; setFontSize: (n: number) => void; getTextWidth: (t: string) => number }, runs: PdfRun[], maxWidthMm: number): PdfWord[][] {
+  const words: PdfRun[] = []
+  for (const run of runs) {
+    const parts = run.text.split(/(\s+)/).filter(p => p.length > 0)
+    for (const part of parts) words.push({ ...run, text: part })
+  }
+  const lines: PdfWord[][] = []
+  let line: PdfWord[] = []
+  let width = 0
+  for (const w of words) {
+    doc.setFont(w.family, w.bold ? 'bold' : 'normal')
+    doc.setFontSize(w.sizePt)
+    const wWidth = doc.getTextWidth(w.text)
+    const isSpace = w.text.trim() === ''
+    if (width + wWidth > maxWidthMm && line.length > 0 && !isSpace) {
+      lines.push(line)
+      line = []
+      width = 0
+    }
+    if (line.length === 0 && isSpace) continue
+    line.push({ ...w, widthMm: wWidth })
+    width += wWidth
+  }
+  if (line.length > 0) lines.push(line)
+  return lines
 }
 
 export default function PeticaoEditorPage() {
@@ -242,11 +463,19 @@ export default function PeticaoEditorPage() {
   const [itensProvas, setItensProvas] = useState<string[]>([])
   const [loadingProvas, setLoadingProvas] = useState(false)
   const [gerandoPdf, setGerandoPdf] = useState(false)
+  const [gerandoDocx, setGerandoDocx] = useState(false)
   const [showFormatPanel, setShowFormatPanel] = useState(false)
   const [fontFamily, setFontFamily] = useState('courier')
   const [fontSize, setFontSize] = useState(13)
   const [lineHeight, setLineHeight] = useState(1.6)
   const [textAlign, setTextAlign] = useState<'justify' | 'left'>('justify')
+
+  // Formatação de trecho/parágrafo selecionado (estilo Word)
+  const [activeParas, setActiveParas] = useState<HTMLElement[]>([])
+  const [hasSelection, setHasSelection] = useState(false)
+  const [selFontFamily, setSelFontFamily] = useState('courier')
+  const [selFontSize, setSelFontSize] = useState(13)
+
   const editorRef = useRef<HTMLDivElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -263,17 +492,107 @@ export default function PeticaoEditorPage() {
 
   useEffect(() => {
     if (data && editorRef.current) {
-      const conteudo = data.conteudoEditado || data.conteudo
-      const { html, totalMarks: tm } = buildEditorHTML(conteudo)
-      editorRef.current.innerHTML = html
+      let tm = 0
+      if (data.conteudoHtml) {
+        editorRef.current.innerHTML = sanitizeEditorHtml(data.conteudoHtml)
+        tm = editorRef.current.querySelectorAll('[data-mark]').length
+      } else {
+        const built = buildEditorHTML(data.conteudoEditado || data.conteudo)
+        editorRef.current.innerHTML = built.html
+        tm = built.totalMarks
+      }
       setTotalMarks(tm)
       setCurrentMark(tm > 0 ? 1 : 0)
       setFontFamily(data.fonteFamilia || 'courier')
       setFontSize(data.fonteTamanho || 13)
       setLineHeight(data.espacamentoLinha || 1.6)
       setTextAlign(data.alinhamentoTexto === 'left' ? 'left' : 'justify')
+      setActiveParas([])
+      setHasSelection(false)
     }
   }, [data])
+
+  // Rastreia em qual(is) parágrafo(s)/trecho está o cursor ou a seleção
+  useEffect(() => {
+    function onSelChange() {
+      const editor = editorRef.current
+      if (!editor) return
+      const sel = window.getSelection()
+      if (!sel || sel.rangeCount === 0) return
+      const range = sel.getRangeAt(0)
+      if (!editor.contains(range.commonAncestorContainer)) return
+      setHasSelection(!sel.isCollapsed)
+      setActiveParas(getEditorParagraphs(editor, range))
+    }
+    document.addEventListener('selectionchange', onSelChange)
+    return () => document.removeEventListener('selectionchange', onSelChange)
+  }, [])
+
+  function withPreservedSelection(fn: () => void) {
+    const editor = editorRef.current
+    const sel = window.getSelection()
+    if (!editor || !sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    const range = sel.getRangeAt(0).cloneRange()
+    editor.focus()
+    sel.removeAllRanges()
+    sel.addRange(range)
+    fn()
+  }
+
+  function applyFontFamilyToSelection(key: string) {
+    setSelFontFamily(key)
+    withPreservedSelection(() => {
+      document.execCommand('fontName', false, FONT_STACKS[key] ?? FONT_STACKS.courier)
+      editorRef.current?.querySelectorAll('font').forEach(f => {
+        const span = document.createElement('span')
+        span.style.fontFamily = FONT_STACKS[key] ?? FONT_STACKS.courier
+        while (f.firstChild) span.appendChild(f.firstChild)
+        f.replaceWith(span)
+      })
+      setActiveParas(paras => [...paras])
+    })
+  }
+
+  function applyFontSizeToSelection(px: number) {
+    const clamped = Math.max(8, Math.min(36, px))
+    setSelFontSize(clamped)
+    withPreservedSelection(() => {
+      document.execCommand('fontSize', false, '7')
+      editorRef.current?.querySelectorAll('font[size="7"]').forEach(f => {
+        const span = document.createElement('span')
+        span.style.fontSize = `${clamped}px`
+        while (f.firstChild) span.appendChild(f.firstChild)
+        f.replaceWith(span)
+      })
+      setActiveParas(paras => [...paras])
+    })
+  }
+
+  function applyAlignToSelection(align: 'justify' | 'left') {
+    if (activeParas.length === 0) return
+    activeParas.forEach(p => { p.style.textAlign = align })
+    setActiveParas(paras => [...paras])
+  }
+
+  function applyLineHeightToSelection(lh: number) {
+    if (activeParas.length === 0) return
+    activeParas.forEach(p => { p.style.lineHeight = String(lh) })
+    setActiveParas(paras => [...paras])
+  }
+
+  function applyIndentToSelection(marginCm: number, indentCm: number) {
+    if (activeParas.length === 0) return
+    const m = Math.max(0, Math.round(marginCm * 4) / 4)
+    const i = Math.round(indentCm * 4) / 4
+    activeParas.forEach(p => { p.style.marginLeft = `${m}cm`; p.style.textIndent = `${i}cm` })
+    setActiveParas(paras => [...paras])
+  }
+
+  const paraTarget = activeParas[0] ?? null
+  const paraAlign = paraTarget ? getParaAlign(paraTarget, textAlign) : textAlign
+  const paraLineHeight = paraTarget ? getParaLineHeight(paraTarget, lineHeight) : lineHeight
+  const paraMarginCm = paraTarget ? getParaMarginCm(paraTarget) : 0
+  const paraIndentCm = paraTarget ? getParaIndentCm(paraTarget) : 1.25
 
   const goToMark = useCallback((index: number) => {
     if (!editorRef.current || index < 1 || index > totalMarks) return
@@ -301,11 +620,13 @@ export default function PeticaoEditorPage() {
     if (!editorRef.current) return
     setSaving(true)
     const content = serializeEditor(editorRef.current)
+    const html = sanitizeEditorHtml(editorRef.current.innerHTML)
     await fetch(`/api/portal/peticoes/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         conteudoEditado: content,
+        conteudoHtml: html,
         fonteFamilia: fontFamily,
         fonteTamanho: fontSize,
         espacamentoLinha: lineHeight,
@@ -468,89 +789,200 @@ export default function PeticaoEditorPage() {
       } catch { /* skip */ }
     }
 
-    // Get plain text with §§ markers, then strip markers for PDF
-    const rawContent = serializeEditor(editorRef.current)
-    const content = rawContent.replace(/§§(.+?)§§/g, '$1')
-    const lines = content.split('\n')
-    let inSumario = false
+    const docFamily = FONT_STACKS[fontFamily] ?? FONT_STACKS.courier
+    const baseSizePt = Math.round(fontSize * 0.75 * 2) / 2
+    const paragraphs = Array.from(editorRef.current.children).filter((c): c is HTMLElement => c instanceof HTMLElement && c.tagName === 'P')
 
-    for (const line of lines) {
-      const t = line.trim()
-      if (!t) { y += 3; if (y > H - MB) { doc.addPage(); y = MT }; continue }
-
-      if (t === 'SUMÁRIO' || t === 'SUMARIO') {
-        inSumario = true
-        y += 4
-        newPageIfNeeded(10)
-        doc.setFont('courier', 'bold')
-        doc.setFontSize(11)
-        doc.text('SUMÁRIO', TOC_X, y)
-        y += 7
-        doc.setFont('courier', 'normal')
+    for (const p of paragraphs) {
+      if (p.classList.contains('ed-spacer')) {
+        y += 3
+        newPageIfNeeded(0)
         continue
       }
 
-      if (inSumario) {
-        const toc = parseTocLine(t)
-        if (toc) {
-          newPageIfNeeded(6)
-          doc.setFont('courier', 'normal')
-          doc.setFontSize(10)
-          const numStr = toc.num.padEnd(5)
-          const numW = doc.getTextWidth(numStr)
-          if (toc.page) {
-            const pageW = doc.getTextWidth(toc.page)
-            const available = TW - ML - numW - pageW - 6 + ML
-            const titleWrapped = doc.splitTextToSize(toc.title, available) as string[]
-            const titleLine = titleWrapped[0] || toc.title
-            const dotCount = Math.max(2, Math.floor((TOC_X + TW - ML - numW - doc.getTextWidth(titleLine) - pageW - 8) / doc.getTextWidth('.')))
-            const dots = '.'.repeat(dotCount)
-            doc.text(numStr, TOC_X, y)
-            doc.text(titleLine + ' ' + dots, TOC_X + numW, y)
-            doc.text(toc.page, RIGHT - 2, y, { align: 'right' })
-          } else {
-            doc.text(numStr + toc.title, TOC_X, y)
-          }
-          y += 5
-          continue
-        }
-        inSumario = false
-      }
-
-      const isHeading = t === t.toUpperCase() && t.length > 3 && !/^\d/.test(t) && !t.startsWith('(') && /[A-ZÁÉÍÓÚÀÃÕÂÊÔÇ]/.test(t)
-      if (isHeading) {
+      if (p.classList.contains('ed-sumario-title')) {
         y += 4
         newPageIfNeeded(10)
         doc.setFont('courier', 'bold')
-        doc.setFontSize(11)
-        const wrapped = doc.splitTextToSize(t, TW) as string[]
-        for (const wl of wrapped) { newPageIfNeeded(6); doc.text(wl, W / 2, y, { align: 'center' }); y += 5.5 }
+        doc.setFontSize(baseSizePt)
+        doc.text(p.textContent || 'SUMÁRIO', TOC_X, y)
+        y += 7
+        continue
+      }
+
+      if (p.classList.contains('ed-toc')) {
+        newPageIfNeeded(6)
+        const numStr = (p.querySelector('.toc-num')?.textContent || '').trimEnd()
+        const title = (p.querySelector('.toc-title')?.textContent || '').trim()
+        const page = (p.querySelector('.toc-page')?.textContent || '').trim()
         doc.setFont('courier', 'normal')
+        doc.setFontSize(baseSizePt * 0.9)
+        const numPad = numStr.padEnd(5)
+        const numW = doc.getTextWidth(numPad)
+        if (page) {
+          const pageW = doc.getTextWidth(page)
+          const available = TW - ML - numW - pageW - 6 + ML
+          const titleWrapped = doc.splitTextToSize(title, available) as string[]
+          const titleLine = titleWrapped[0] || title
+          const dotCount = Math.max(2, Math.floor((TOC_X + TW - ML - numW - doc.getTextWidth(titleLine) - pageW - 8) / doc.getTextWidth('.')))
+          const dots = '.'.repeat(dotCount)
+          doc.text(numPad, TOC_X, y)
+          doc.text(titleLine + ' ' + dots, TOC_X + numW, y)
+          doc.text(page, RIGHT - 2, y, { align: 'right' })
+        } else {
+          doc.text(numPad + title, TOC_X, y)
+        }
+        y += 5
+        continue
+      }
+
+      const isTitle = p.classList.contains('ed-title')
+      const isQuoted = p.classList.contains('ed-quoted')
+      const align = getParaAlign(p, textAlign)
+      const lineHeightMult = getParaLineHeight(p, lineHeight)
+      const marginCm = getParaMarginCm(p)
+      const indentCm = getParaIndentCm(p)
+      const sizePt = isQuoted ? Math.round(baseSizePt * 0.92 * 2) / 2 : baseSizePt
+
+      const runsRaw = flattenRuns(p, docFamily, isQuoted ? fontSize * 0.92 : fontSize)
+      const runs: PdfRun[] = runsRaw.map(r => ({
+        text: r.text,
+        family: stackToJsPdfFont(r.family),
+        sizePt: Math.round(r.sizePx * 0.75 * 2) / 2,
+        bold: isTitle,
+      }))
+      if (runs.length === 0) continue
+
+      const leftMm = ML + marginCm * 10
+      const availWidth = TW - marginCm * 10
+      const firstLineIndentMm = indentCm * 10
+      const stepMm = sizePt * 0.3528 * lineHeightMult
+
+      if (isTitle) {
+        const wrapped = wrapPdfRuns(doc, runs, TW)
+        y += 4
+        for (const line of wrapped) {
+          newPageIfNeeded(stepMm)
+          const lineWidth = line.reduce((s, seg) => s + seg.widthMm, 0)
+          let x = W / 2 - lineWidth / 2
+          for (const seg of line) {
+            doc.setFont(seg.family, 'bold')
+            doc.setFontSize(seg.sizePt)
+            doc.text(seg.text.toUpperCase(), x, y)
+            x += seg.widthMm
+          }
+          y += stepMm
+        }
         y += 2
         continue
       }
 
-      const isQuoted = /^Art\.\s*\d|^§|^Parágrafo|^I\s*[-–]|^II\s*[-–]|^III\s*[-–]|^OJ\s*n|^Súmula/.test(t)
-      if (isQuoted) {
-        newPageIfNeeded(6)
-        doc.setFont('courier', 'normal')
-        doc.setFontSize(10)
-        const wrapped = doc.splitTextToSize(t, TW - 10) as string[]
-        for (const wl of wrapped) { newPageIfNeeded(6); doc.text(wl, ML + 10, y); y += 5 }
-        doc.setFontSize(11)
-        y += 1
-        continue
-      }
-
-      newPageIfNeeded(6)
-      doc.setFont('courier', 'normal')
-      doc.setFontSize(11)
-      const wrapped = doc.splitTextToSize(t, TW) as string[]
-      for (const wl of wrapped) { newPageIfNeeded(6); doc.text(wl, ML, y); y += 5.5 }
+      const wrapped = wrapPdfRuns(doc, runs, availWidth - Math.max(0, firstLineIndentMm))
+      wrapped.forEach((line, idx) => {
+        newPageIfNeeded(stepMm)
+        const isFirst = idx === 0
+        const x0 = leftMm + (isFirst ? Math.max(0, firstLineIndentMm) : 0)
+        const maxW = availWidth - (isFirst ? Math.max(0, firstLineIndentMm) : 0)
+        const lineWidth = line.reduce((s, seg) => s + seg.widthMm, 0)
+        const isLastLine = idx === wrapped.length - 1
+        let x = x0
+        if (align === 'justify' && !isLastLine && line.length > 1) {
+          const extra = Math.max(0, maxW - lineWidth)
+          const gaps = line.filter(seg => seg.text.trim() === '').length
+          const perGap = gaps > 0 ? extra / gaps : 0
+          for (const seg of line) {
+            doc.setFont(seg.family, seg.bold ? 'bold' : 'normal')
+            doc.setFontSize(seg.sizePt)
+            doc.text(seg.text, x, y)
+            x += seg.widthMm + (seg.text.trim() === '' ? perGap : 0)
+          }
+        } else {
+          for (const seg of line) {
+            doc.setFont(seg.family, seg.bold ? 'bold' : 'normal')
+            doc.setFontSize(seg.sizePt)
+            doc.text(seg.text, x, y)
+            x += seg.widthMm
+          }
+        }
+        y += stepMm
+      })
       y += 1
     }
 
     doc.save(`peticao_${data.formulario.nome.replace(/\s+/g, '_')}_${id.slice(0, 8)}.pdf`)
+  }
+
+  async function handleDownloadDocx() {
+    if (!editorRef.current || !data) return
+    setGerandoDocx(true)
+    try {
+      const { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType } = await import('docx')
+
+      const docFamily = FONT_STACKS[fontFamily] ?? FONT_STACKS.courier
+      const baseSizeHalfPt = Math.round(fontSize * 1.5)
+      const paragraphs = Array.from(editorRef.current.children).filter((c): c is HTMLElement => c instanceof HTMLElement && c.tagName === 'P')
+
+      const docParagraphs = paragraphs.map(p => {
+        if (p.classList.contains('ed-spacer')) {
+          return new Paragraph({ children: [new TextRun('')] })
+        }
+
+        if (p.classList.contains('ed-sumario-title')) {
+          return new Paragraph({
+            indent: { left: '3.5cm' },
+            children: [new TextRun({ text: p.textContent || 'SUMÁRIO', bold: true, font: stackToDocxFont(docFamily), size: baseSizeHalfPt })],
+          })
+        }
+
+        if (p.classList.contains('ed-toc')) {
+          const numStr = (p.querySelector('.toc-num')?.textContent || '').trim()
+          const title = (p.querySelector('.toc-title')?.textContent || '').trim()
+          const page = (p.querySelector('.toc-page')?.textContent || '').trim()
+          return new Paragraph({
+            indent: { left: '3.5cm' },
+            tabStops: [{ type: TabStopType.RIGHT, position: 9600 }],
+            children: [new TextRun({ text: `${numStr}\t${title}${page ? '\t' + page : ''}`, font: stackToDocxFont(docFamily), size: Math.round(baseSizeHalfPt * 0.9) })],
+          })
+        }
+
+        const isTitle = p.classList.contains('ed-title')
+        const isQuoted = p.classList.contains('ed-quoted')
+        const align = getParaAlign(p, textAlign)
+        const lineHeightMult = getParaLineHeight(p, lineHeight)
+        const marginCm = getParaMarginCm(p)
+        const indentCm = Math.max(0, getParaIndentCm(p))
+        const hangingCm = Math.max(0, -getParaIndentCm(p))
+        const baseSizePx = isQuoted ? fontSize * 0.92 : fontSize
+
+        const runs = flattenRuns(p, docFamily, baseSizePx)
+        const textRuns = runs.map(r => new TextRun({
+          text: isTitle ? r.text.toUpperCase() : r.text,
+          font: stackToDocxFont(r.family),
+          size: Math.round(r.sizePx * 1.5),
+          bold: isTitle,
+        }))
+
+        return new Paragraph({
+          alignment: isTitle ? AlignmentType.CENTER : (align === 'left' ? AlignmentType.LEFT : AlignmentType.JUSTIFIED),
+          indent: hangingCm > 0
+            ? { left: `${marginCm}cm`, hanging: `${hangingCm}cm` }
+            : { left: `${marginCm}cm`, firstLine: `${indentCm}cm` },
+          spacing: { line: Math.round(lineHeightMult * 240), lineRule: 'auto' },
+          children: textRuns.length > 0 ? textRuns : [new TextRun('')],
+        })
+      })
+
+      const docxDoc = new Document({ sections: [{ properties: {}, children: docParagraphs }] })
+      const blob = await Packer.toBlob(docxDoc)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `peticao_${data.formulario.nome.replace(/\s+/g, '_')}_${id.slice(0, 8)}.docx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setGerandoDocx(false)
+    }
   }
 
   if (loading) {
@@ -643,10 +1075,10 @@ export default function PeticaoEditorPage() {
             )}
           </button>
 
-          {/* Formatação */}
+          {/* Formatação padrão do documento */}
           <button onClick={() => setShowFormatPanel(true)}
             className="p-2 md:px-3 md:py-2 rounded-lg text-xs font-semibold border border-gray-200 text-gray-500 hover:bg-gray-50 transition-all"
-            title="Formatação">
+            title="Formatação padrão do documento">
             <svg className="w-4 h-4 md:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
             </svg>
@@ -654,7 +1086,7 @@ export default function PeticaoEditorPage() {
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
               </svg>
-              Formatação
+              Padrão
             </span>
           </button>
 
@@ -685,6 +1117,25 @@ export default function PeticaoEditorPage() {
             <span className="hidden md:inline">{saving ? 'Salvando...' : saved ? 'Salvo' : 'Salvar'}</span>
           </button>
 
+          {/* DOCX */}
+          <button onClick={handleDownloadDocx} disabled={gerandoDocx}
+            className="p-2 md:px-4 md:py-2 rounded-lg text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
+            title="Baixar DOCX">
+            {gerandoDocx
+              ? <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+              : <>
+                <svg className="w-4 h-4 md:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span className="hidden md:flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  DOCX
+                </span>
+              </>}
+          </button>
+
           {/* PDF */}
           <button onClick={handleDownloadPDF}
             className="p-2 md:px-4 md:py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
@@ -702,11 +1153,59 @@ export default function PeticaoEditorPage() {
         </div>
       </div>
 
+      {/* ── Mini-toolbar de formatação por trecho/parágrafo (estilo Word) ── */}
+      <div className="bg-gray-50 border-b border-gray-200 px-3 md:px-6 py-2 flex flex-wrap items-center gap-x-4 gap-y-2 shrink-0 z-10">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide hidden sm:inline">Trecho selecionado</span>
+          <select disabled={!hasSelection} value={selFontFamily} onChange={e => applyFontFamilyToSelection(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            {Object.entries(FONT_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          <div className="flex items-center gap-1">
+            <button disabled={!hasSelection} onClick={() => applyFontSizeToSelection(selFontSize - 1)}
+              className="w-6 h-6 rounded border border-gray-200 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 font-bold leading-none">−</button>
+            <span className="w-7 text-center text-xs tabular-nums text-gray-700">{selFontSize}</span>
+            <button disabled={!hasSelection} onClick={() => applyFontSizeToSelection(selFontSize + 1)}
+              className="w-6 h-6 rounded border border-gray-200 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 font-bold leading-none">+</button>
+          </div>
+        </div>
+
+        <div className="w-px h-5 bg-gray-200 hidden sm:block" />
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide hidden sm:inline">Parágrafo</span>
+          <select disabled={activeParas.length === 0} value={paraLineHeight} onChange={e => applyLineHeightToSelection(parseFloat(e.target.value))}
+            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            {[1, 1.15, 1.5, 2].map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <button disabled={activeParas.length === 0} onClick={() => applyAlignToSelection('justify')}
+            className={`px-2 py-1.5 rounded-lg border text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all ${paraAlign === 'justify' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}>
+            Justificado
+          </button>
+          <button disabled={activeParas.length === 0} onClick={() => applyAlignToSelection('left')}
+            className={`px-2 py-1.5 rounded-lg border text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all ${paraAlign === 'left' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}>
+            Esquerda
+          </button>
+        </div>
+
+        {activeParas.length === 0 && (
+          <span className="text-gray-400 text-[11px] ml-auto hidden sm:inline">Clique em um parágrafo ou selecione um trecho de texto para formatar</span>
+        )}
+      </div>
+
       {/* ── Editor + Sidebar ── */}
       <div className="flex-1 flex overflow-hidden">
 
         {/* Scroll area */}
         <div ref={scrollAreaRef} className="flex-1 overflow-y-auto bg-gray-100 md:bg-gray-200 p-3 md:p-8">
+
+          {/* Régua de recuo */}
+          <Ruler
+            marginCm={paraMarginCm}
+            indentCm={paraIndentCm}
+            disabled={activeParas.length === 0}
+            onChange={(m, i) => applyIndentToSelection(m, i)}
+          />
 
           {/* Paper timbrado (desktop only na versão completa) */}
           {data.escritorio?.papelTimbrado && (
@@ -974,14 +1473,14 @@ export default function PeticaoEditorPage() {
       </div>
     )}
 
-    {/* ── Painel de Formatação ── */}
+    {/* ── Painel de Formatação padrão do documento ── */}
     {showFormatPanel && (
       <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center">
         <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowFormatPanel(false)} />
 
         <div className="relative bg-white w-full md:max-w-sm md:rounded-2xl rounded-t-2xl shadow-2xl flex flex-col max-h-[85vh]">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
-            <p className="text-sm font-bold text-gray-900">Formatação do documento</p>
+            <p className="text-sm font-bold text-gray-900">Formatação padrão do documento</p>
             <button onClick={() => setShowFormatPanel(false)}
               className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -991,6 +1490,9 @@ export default function PeticaoEditorPage() {
           </div>
 
           <div className="p-5 space-y-5 overflow-y-auto">
+            <p className="text-xs text-gray-500 -mt-1">
+              Vale para o texto que ainda não recebeu uma formatação específica. Para formatar só um trecho ou parágrafo, use a barra logo acima do documento.
+            </p>
             {/* Fonte */}
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Fonte</p>
